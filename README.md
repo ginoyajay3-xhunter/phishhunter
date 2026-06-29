@@ -33,15 +33,15 @@ sudo apt update && sudo apt install python3 python3-venv python3-pip git
 ## Quick Start (Kali Linux)
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/phishhunter.git
-cd phishhunter
+git clone https://github.com/ginoyajay3-xhunter/phishhunter.git
+cd phishhunter/phishhunter
 chmod +x setup.sh
 ./setup.sh
 source venv/bin/activate
-uvicorn app:app --reload
+uvicorn app:app --reload --port 8001
 ```
 
-Then open **http://127.0.0.1:8000** in your browser.
+Then open **http://127.0.0.1:8001** in your browser.
 
 `setup.sh` automatically creates a `.env` file with placeholder values on first run.
 
@@ -58,6 +58,8 @@ pip install -r requirements.txt
 Create a `.env` file in the project root with:
 
 ```
+
+nano .env
 VT_API_KEY=your_virustotal_api_key_here
 LOG_LEVEL=INFO
 ```
@@ -65,12 +67,12 @@ LOG_LEVEL=INFO
 Get a free VirusTotal API key from https://www.virustotal.com/gui/my-apikey (optional — the app works without it, just skips reputation checks).
 
 ```bash
-uvicorn app:app --reload
+uvicorn app:app --reload --port 8001
 ```
 
 ## Usage
 
-- **Web dashboard**: open `http://127.0.0.1:8000`, paste a URL, click Analyze
+- **Web dashboard**: open `http://127.0.0.1:8001`, paste a URL, click Analyze
 - **JSON API**: `GET /api/scan?url=https://example.com`
 - **IOC lookup**: `GET /api/ioc?value=8.8.8.8` (accepts IP, domain, or MD5/SHA1/SHA256 hash)
 - **PDF report**: click "Download PDF Report" after a scan, or `GET /export-pdf/{scan_id}`
