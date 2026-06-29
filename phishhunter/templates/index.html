@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PhishHunter</title>
+<style>
+    * { box-sizing: border-box; }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #0f1117;
+        color: #e6e6e6;
+        margin: 0;
+        padding: 40px 20px;
+    }
+    .container { max-width: 760px; margin: 0 auto; }
+    h1 { font-size: 1.6rem; margin-bottom: 4px; }
+    p.subtitle { color: #9aa0ac; margin-top: 0; margin-bottom: 28px; }
+    form {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 30px;
+    }
+    input[type="text"] {
+        flex: 1;
+        padding: 12px 14px;
+        border-radius: 8px;
+        border: 1px solid #2a2d36;
+        background: #1a1d26;
+        color: #e6e6e6;
+        font-size: 0.95rem;
+    }
+    button {
+        padding: 12px 20px;
+        border-radius: 8px;
+        border: none;
+        background: #4f7cff;
+        color: white;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.95rem;
+    }
+    button:hover { background: #3d68e0; }
+
+    .card {
+        background: #1a1d26;
+        border: 1px solid #2a2d36;
+        border-radius: 12px;
+        padding: 24px;
+        margin-bottom: 20px;
+    }
+    .verdict {
+        font-size: 1.3rem;
+        font-weight: 700;
+        margin-bottom: 6px;
+    }
+    .high { color: #ff5c5c; }
+    .suspicious { color: #ffb84f; }
+    .safe { color: #5fe07a; }
+
+    .score-bar-bg {
+        background: #2a2d36;
+        height: 10px;
+        border-radius: 6px;
+        overflow: hidden;
+        margin: 14px 0 20px;
+    }
+    .score-bar-fill { height: 100%; border-radius: 6px; }
+
+    ul.reasons { margin: 0; padding-left: 20px; color: #cfd2da; }
+    ul.reasons li { margin-bottom: 6px; }
+
+    .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-top: 16px;
+    }
+    .grid .label { color: #9aa0ac; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .grid .value { font-size: 0.95rem; margin-top: 2px; }
+
+    .section-title { font-size: 0.95rem; color: #9aa0ac; margin: 24px 0 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+
+    a.vtlink { color: #4f7cff; text-decoration: none; }
+    a.vtlink:hover { text-decoration: underline; }
+
+    .error-text { color: #ff8080; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>🛡️ PhishHunter</h1>
+    <p class="subtitle">Defensive URL & security analysis — WHOIS, SSL/TLS, DNS, headers, tech stack, certificate transparency, email security, and VirusTotal reputation.</p>
+
+    <form action="/scan" method="post">
+        <input type="text" name="url" placeholder="Enter a URL to analyze, e.g. https://example.com/login" required>
+        <button type="submit">Analyze</button>
+    </form>
+
+    <div style="margin-bottom:30px; padding:14px 16px; background:#161922; border:1px solid #2a2d36; border-radius:10px;">
+        <div style="font-size:0.8rem; color:#9aa0ac; margin-bottom:8px;">IOC LOOKUP — check an IP, domain, or file hash directly</div>
+        <div style="display:flex; gap:8px;">
+            <input type="text" id="iocInput" placeholder="e.g. 8.8.8.8 or a SHA256 hash" style="flex:1; padding:10px 12px; border-radius:8px; border:1px solid #2a2d36; background:#1a1d26; color:#e6e6e6; font-size:0.9rem;">
+            <button type="button" onclick="checkIoc()" style="padding:10px 16px; border-radius:8px; border:none; background:#2a2d36; color:#e6e6e6; font-weight:600; cursor:pointer; font-size:0.9rem;">Check</button>
+        </div>
+        <div id="iocResult" style="margin-top:10px; font-size:0.85rem; color:#cfd2da;"></div>
+    </div>
+    <script>
+    async function checkIoc() {
+        const value = document.getElementById('iocInput').value.trim();
+        const resultDiv = document.getElementById('iocResult');
+        if (!value) return;
+        resultDiv.textContent = 'Checking...';
+        try {
+            const resp = await fetch('/api/ioc?value=' + encodeURIComponent(value));
+            const data = await resp.json();
+            if (data.error) {
+                resultDiv.innerHTML = '<span style="color:#ff8080;">' + data.error + '</span>';
+            } else {
+                resultDiv.innerHTML = 'Type: <b>' + data.type + '</b> &nbsp;|&nbsp; Malicious: ' + data.malicious +
+                    ' &nbsp;|&nbsp; Suspicious: ' + data.suspicious + ' &nbsp;|&nbsp; Harmless: ' + data.harmless;
+            }
+        } catch (e) {
+            resultDiv.innerHTML = '<span style="color:#ff8080;">Lookup failed: ' + e + '</span>';
+        }
+    }
+    </script>
+
+    {% if result %}
+    <div class="card">
+        {% set risk = result.risk %}
+        {% if "HIGH RISK" in risk.verdict %}
+            {% set cls = "high" %}
+            {% set bar_color = "#ff5c5c" %}
+        {% elif "SUSPICIOUS" in risk.verdict %}
+            {% set cls = "suspicious" %}
+            {% set bar_color = "#ffb84f" %}
+        {% else %}
+            {% set cls = "safe" %}
+            {% set bar_color = "#5fe07a" %}
+        {% endif %}
+
+        <div class="verdict {{ cls }}">{{ risk.verdict }}</div>
+        <div style="color:#9aa0ac; font-size:0.9rem;">{{ result.url }}</div>
+
+        <div class="score-bar-bg">
+            <div class="score-bar-fill" style="width: {{ risk.score }}%; background: {{ bar_color }};"></div>
+        </div>
+        <div style="font-size:0.85rem; color:#9aa0ac;">Risk score: {{ risk.score }} / 100</div>
+
+        {% if result.posture %}
+        <div style="margin-top:14px; padding-top:14px; border-top:1px solid #2a2d36;">
+            <div class="label">Security Posture</div>
+            <div class="value" style="font-size:1rem; margin-top:4px;">{{ result.posture.grade }} ({{ result.posture.score }}/100)</div>
+        </div>
+        {% endif %}
+
+        <div style="margin-top:16px;">
+            <a href="/export-pdf/{{ scan_id }}" style="display:inline-block; padding:10px 16px; border-radius:8px; background:#2a2d36; color:#e6e6e6; text-decoration:none; font-size:0.9rem; font-weight:600;">⬇ Download PDF Report</a>
+        </div>
+
+        <div class="section-title">Risk Score Breakdown</div>
+        {% if risk.findings %}
+        <table style="width:100%; border-collapse:collapse; margin-top:8px;">
+            <thead>
+                <tr style="text-align:left; border-bottom:1px solid #2a2d36;">
+                    <th style="padding:6px 4px; color:#9aa0ac; font-size:0.8rem; font-weight:600;">FINDING</th>
+                    <th style="padding:6px 4px; color:#9aa0ac; font-size:0.8rem; font-weight:600; text-align:right;">POINTS</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for f in risk.findings|sort(attribute='points', reverse=true) %}
+                <tr style="border-bottom:1px solid #20232b;">
+                    <td style="padding:6px 4px; color:#cfd2da; font-size:0.88rem;">
+                        {{ f.reason }}
+                        {% if f.discounted_from %}<span style="color:#9aa0ac;"> (reduced from +{{ f.discounted_from }} — strong trust signals)</span>{% endif %}
+                    </td>
+                    <td style="padding:6px 4px; color:#ffb84f; font-size:0.88rem; text-align:right;">+{{ f.points }}</td>
+                </tr>
+            {% endfor %}
+                <tr>
+                    <td style="padding:8px 4px; font-weight:700;">Total</td>
+                    <td style="padding:8px 4px; font-weight:700; text-align:right;">{{ risk.score }} / 100</td>
+                </tr>
+            </tbody>
+        </table>
+        {% else %}
+        <p style="color:#9aa0ac;">No risk signals detected.</p>
+        {% endif %}
+
+        <div class="section-title">Domain Details</div>
+        <div class="grid">
+            <div>
+                <div class="label">Domain Age</div>
+                <div class="value">
+                    {% if result.whois.lookup_succeeded %}
+                        {{ result.whois.domain_age_days }} days
+                    {% else %}
+                        Unknown
+                    {% endif %}
+                </div>
+            </div>
+            <div>
+                <div class="label">Registrar</div>
+                <div class="value">
+                    {% if result.whois.registrar %}
+                        {{ result.whois.registrar }}
+                    {% elif not result.whois.lookup_succeeded %}
+                        <span style="color:#9aa0ac;">WHOIS lookup failed (try again)</span>
+                    {% else %}
+                        Not listed
+                    {% endif %}
+                </div>
+            </div>
+            <div>
+                <div class="label">DNS Resolves</div>
+                <div class="value">{{ "Yes" if result.dns.resolves else "No" }}</div>
+            </div>
+            <div>
+                <div class="label">SSL Certificate</div>
+                <div class="value">
+                    {% if result.ssl.has_valid_cert %}
+                        Valid ({{ result.ssl.issuer }})
+                    {% else %}
+                        Not valid / not present
+                    {% endif %}
+                </div>
+            </div>
+            <div>
+                <div class="label">VirusTotal</div>
+                <div class="value">
+                    {% if result.vt.checked %}
+                        {{ result.vt.malicious }} malicious / {{ result.vt.suspicious }} suspicious
+                        <br><a class="vtlink" href="{{ result.vt.permalink }}" target="_blank">View report →</a>
+                    {% else %}
+                        <span class="error-text">{{ result.vt.error }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div>
+                <div class="label">Wayback Machine</div>
+                <div class="value">
+                    {% if result.wayback.first_seen %}
+                        First seen {{ result.wayback.first_seen }}
+                    {% elif result.wayback.checked %}
+                        No archive history found
+                    {% else %}
+                        <span class="error-text">Lookup failed</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="section-title">Raw DNS Records</div>
+        <div class="grid">
+            <div>
+                <div class="label">A Records</div>
+                <div class="value" style="font-size:0.82rem;">{{ result.dns_health.a_records|join(', ') if result.dns_health.a_records else "Record not found" }}</div>
+            </div>
+            <div>
+                <div class="label">AAAA Records</div>
+                <div class="value" style="font-size:0.82rem;">
+                    {% if result.dns_health.aaaa_records %}{{ result.dns_health.aaaa_records|join(', ') }}
+                    {% elif result.dns_health.record_status.aaaa == "lookup_failed" %}<span class="error-text">DNS lookup failed</span>
+                    {% else %}Record not found{% endif %}
+                </div>
+            </div>
+            <div>
+                <div class="label">NS Records</div>
+                <div class="value" style="font-size:0.82rem;">
+                    {% if result.dns_health.ns_records %}{{ result.dns_health.ns_records|join(', ') }}
+                    {% elif result.dns_health.record_status.ns == "lookup_failed" %}<span class="error-text">DNS lookup failed</span>
+                    {% else %}Record not found{% endif %}
+                </div>
+            </div>
+            <div>
+                <div class="label">MX Records</div>
+                <div class="value" style="font-size:0.82rem;">
+                    {% if result.dns_health.mx_records %}{{ result.dns_health.mx_records|join(', ') }}
+                    {% elif result.dns_health.record_status.mx == "lookup_failed" %}<span class="error-text">DNS lookup failed</span>
+                    {% else %}Record not found{% endif %}
+                </div>
+            </div>
+            <div>
+                <div class="label">DNSSEC</div>
+                <div class="value" style="font-size:0.82rem;">
+                    {% if not result.dns_health.dnssec.checked %}<span class="error-text">Lookup failed</span>
+                    {% elif result.dns_health.dnssec.dnssec_detected %}Configured
+                    {% else %}Not configured{% endif %}
+                </div>
+            </div>
+            <div>
+                <div class="label">CAA Record</div>
+                <div class="value" style="font-size:0.82rem;">
+                    {% if not result.dns_health.caa.checked %}<span class="error-text">Lookup failed</span>
+                    {% elif result.dns_health.caa.has_caa %}{{ result.dns_health.caa.caa_records|join(', ') }}
+                    {% else %}None found{% endif %}
+                </div>
+            </div>
+        </div>
+        {% if result.dns_health.issues %}
+        <ul class="reasons" style="margin-top:10px;">
+            {% for issue in result.dns_health.issues %}
+            <li style="color:#ffb84f;">{{ issue }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+
+        <div class="section-title">Email Security (SPF / DKIM / DMARC)</div>
+        {% if not result.email_security.uses_email %}
+        <p style="color:#9aa0ac; font-size:0.85rem; margin-top:-4px; margin-bottom:10px;">
+            This domain has no MX records, so it doesn't send or receive email — SPF/DMARC/DKIM below are informational only and aren't counted against the risk score.
+        </p>
+        {% endif %}
+        <div class="grid">
+            <div>
+                <div class="label">MX Records</div>
+                <div class="value">
+                    {% if result.email_security.mx.has_mx %}
+                        {{ result.email_security.mx.mx_hosts|length }} found
+                    {% elif result.email_security.mx.error %}
+                        <span class="error-text">Lookup failed</span>
+                    {% else %}
+                        None found
+                    {% endif %}
+                </div>
+            </div>
+            <div>
+                <div class="label">SPF{% if result.email_security.spf.informational_only %} <span style="color:#9aa0ac; font-weight:400;">(info only)</span>{% endif %}</div>
+                <div class="value">
+                    {% if result.email_security.spf.has_spf %}Configured
+                    {% elif result.email_security.spf.error %}<span class="error-text">Lookup failed</span> <span style="color:#9aa0ac; font-size:0.85rem;">(transient — try scanning again)</span>
+                    {% else %}Not found{% endif %}
+                </div>
+            </div>
+            <div>
+                <div class="label">DMARC{% if result.email_security.dmarc.informational_only %} <span style="color:#9aa0ac; font-weight:400;">(info only)</span>{% endif %}</div>
+                <div class="value">
+                    {% if result.email_security.dmarc.has_dmarc %}Configured
+                    {% elif result.email_security.dmarc.error %}<span class="error-text">Lookup failed</span> <span style="color:#9aa0ac; font-size:0.85rem;">(transient — try scanning again)</span>
+                    {% else %}Not found{% endif %}
+                </div>
+            </div>
+            <div>
+                <div class="label">DKIM (common selectors){% if result.email_security.dkim.informational_only %} <span style="color:#9aa0ac; font-weight:400;">(info only)</span>{% endif %}</div>
+                <div class="value">{{ result.email_security.dkim.status_label }}</div>
+            </div>
+        </div>
+
+        <div class="section-title">Brand Impersonation Check</div>
+        <div class="grid">
+            <div>
+                <div class="label">Homograph / Punycode</div>
+                <div class="value">{{ "Detected ⚠️" if result.brand.has_homograph else "None" }}</div>
+            </div>
+            <div>
+                <div class="label">Similar to Known Brand</div>
+                <div class="value">
+                    {% if result.brand.potential_brand_matches %}
+                        {% for m in result.brand.potential_brand_matches[:3] %}
+                            {{ m.brand }} (distance {{ m.edit_distance }}){% if not loop.last %}, {% endif %}
+                        {% endfor %}
+                    {% else %}
+                        No close matches
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="section-title">Redirect Chain</div>
+        <div class="grid">
+            <div>
+                <div class="label">Redirect Hops</div>
+                <div class="value">
+                    {% if result.redirects.checked %}
+                        {{ result.redirects.hop_count }}
+                    {% else %}
+                        <span class="error-text">{{ result.redirects.error or "Could not check" }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div>
+                <div class="label">Final Destination Domain Changed</div>
+                <div class="value">{{ "Yes ⚠️" if result.redirects.domain_changed else "No" }}</div>
+            </div>
+        </div>
+
+        <div class="section-title">Security Headers</div>
+        <div class="grid">
+            <div>
+                <div class="label">Headers Present</div>
+                <div class="value">{{ result.security_headers.headers_present|length }}</div>
+            </div>
+            <div>
+                <div class="label">Headers Missing</div>
+                <div class="value">{{ result.security_headers.headers_missing|length }}</div>
+            </div>
+        </div>
+        {% if result.security_headers.headers_missing %}
+        <ul class="reasons" style="margin-top:10px;">
+            {% for h in result.security_headers.headers_missing %}
+            <li>{{ h.name }} <span style="color:#9aa0ac;">({{ h.severity }} impact)</span></li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+
+        <div class="section-title">TLS Analysis</div>
+        <div class="grid">
+            <div>
+                <div class="label">TLS Version</div>
+                <div class="value">{{ result.tls.tls_version or "N/A" }}</div>
+            </div>
+            <div>
+                <div class="label">Cipher Suite</div>
+                <div class="value">{{ result.tls.cipher_name or "N/A" }}</div>
+            </div>
+            <div>
+                <div class="label">Weak Protocol</div>
+                <div class="value">{{ "Yes ⚠️" if result.tls.is_weak_protocol else "No" }}</div>
+            </div>
+            <div>
+                <div class="label">Cert Expiry</div>
+                <div class="value">
+                    {% if result.ssl.days_until_expiry is not none %}
+                        {{ result.ssl.days_until_expiry }} days
+                        {% if result.ssl.is_expired %}<span style="color:#ff5c5c;"> (expired)</span>{% endif %}
+                        {% if result.ssl.is_expiring_soon %}<span style="color:#ffb84f;"> (expiring soon)</span>{% endif %}
+                    {% else %}
+                        N/A
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="section-title">Technology Detected</div>
+        <div class="value" style="margin-top:4px;">
+            {% if result.technologies.technologies %}
+                {% for t in result.technologies.technologies %}
+                    <span style="display:inline-block; background:#2a2d36; padding:4px 10px; border-radius:6px; margin:2px; font-size:0.85rem;">{{ t.name }} <span style="color:#9aa0ac;">({{ t.category }})</span></span>
+                {% endfor %}
+            {% elif result.technologies.error %}
+                <span class="error-text">Lookup failed — {{ result.technologies.error }}</span>
+            {% else %}
+                <span style="color:#9aa0ac;">{{ result.technologies.status_label or "No technology fingerprint identified" }}</span>
+            {% endif %}
+        </div>
+
+        <div class="section-title">Certificate Transparency</div>
+        {% if result.cert_transparency.checked %}
+        <div class="grid">
+            <div>
+                <div class="label">Total Certificates Issued</div>
+                <div class="value">{{ result.cert_transparency.total_certificates }}</div>
+            </div>
+            <div>
+                <div class="label">Unique Subdomains Found</div>
+                <div class="value">{{ result.cert_transparency.unique_subdomains|length }}</div>
+            </div>
+            <div>
+                <div class="label">Certificates in Last 7 Days</div>
+                <div class="value">{{ result.cert_transparency.recent_certificates|length }}</div>
+            </div>
+        </div>
+        {% if result.cert_transparency.unique_subdomains %}
+        <details style="margin-top:10px; color:#cfd2da; font-size:0.85rem;">
+            <summary style="cursor:pointer; color:#9aa0ac;">View subdomains found ({{ result.cert_transparency.unique_subdomains|length }})</summary>
+            <ul class="reasons" style="margin-top:8px;">
+                {% for sub in result.cert_transparency.unique_subdomains %}
+                <li>{{ sub }}</li>
+                {% endfor %}
+            </ul>
+        </details>
+        {% endif %}
+        {% else %}
+        <p style="color:#9aa0ac; font-size:0.9rem;">
+            Lookup failed (crt.sh did not respond in time)<span class="error-text">{{ " — " + result.cert_transparency.error if result.cert_transparency.error }}</span>. This is usually transient; try scanning again.
+        </p>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+</body>
+</html>
